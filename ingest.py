@@ -8,8 +8,6 @@ from config import (
     NSF_DAYS_BACK,
     NSF_FILTER_KEYWORDS,
     NSF_PROGRAM_NAMES,
-    SBIR_GOV_DAYS_BACK,
-    SBIR_GOV_FILTER_KEYWORDS,
     ENABLE_OPENALEX,
     ENABLE_NSF_SBIR,
     ENABLE_SBIR_GOV,
@@ -155,15 +153,11 @@ def fetch_nsf_sbir_awards():
                 abstract = award.get("abstractText", "") or ""
                 title = award.get("title", "") or ""
 
-                if len(abstract.split()) < 100:
-                    continue
-
                 content = (title + " " + abstract).lower()
                 if not any(kw in content for kw in NSF_FILTER_KEYWORDS):
                     continue
 
                 fn = award.get("fundProgramName", "")
-                amt = int(award.get("estimatedTotalAmt") or 0)
                 program = "STTR" if "STTR" in fn else "SBIR"
                 if "Fast-Track" in fn:
                     grant_type = f"{program} Fast-Track"
@@ -197,71 +191,109 @@ def fetch_nsf_sbir_awards():
     return companies
 
 def fetch_sbir_gov():
+    # NOTE: sbir.gov API is currently offline for maintenance
+    # Set ENABLE_SBIR_GOV=True in config.py when restored
     if not ENABLE_SBIR_GOV:
         print("SBIR.gov: disabled (ENABLE_SBIR_GOV=False)")
         return []
-    print("Fetching SBIR.gov awards...")
+    print("Fetching SBIR.gov awards (DOD + DOE)...")
 
-    # NOTE: sbir.gov API has been offline intermittently.
-    # Set ENABLE_SBIR_GOV=True in config.py when the API is restored.
-    # Docs: https://www.sbir.gov/sites/default/files/sbir_gov_api_documentation_v3.pdf
-    url = "https://api.sbir.gov/public/api/awards"
-    cutoff_year = (datetime.now() - timedelta(days=SBIR_GOV_DAYS_BACK)).year
+    url = "https://api.www.sbir.gov/public/api/awards"
+    current_year = datetime.now().year
+    agencies = ["DOD", "DOE"]
+    years = [current_year, current_year - 1]
     companies = []
-    seen_ids = set()
+    seen_contracts = set()
 
-    for keyword in SBIR_GOV_FILTER_KEYWORDS:
-        params = {
-            "keyword": keyword,
-            "award_year": cutoff_year,
-            "rows": 25,
-        }
+    for agency in agencies:
+        for year in years:
+            start = 0
+            page_size = 400
+            while True:
+                params = {
+                    "agency": agency,
+                    "year": year,
+                    "rows": page_size,
+                    "start": start,
+                    "format": "json",
+                }
+                try:
+                    response = requests.get(url, params=params, timeout=20)
+                    if not response.ok:
+                        print(f"SBIR.gov [{agency} {year}]: non-200 response ({response.status_code}) — API may still be in maintenance")
+                        break
+                    content_type = response.headers.get("Content-Type", "")
+                    if "html" in content_type:
+                        print(f"SBIR.gov [{agency} {year}]: received HTML instead of JSON — API is in maintenance mode")
+                        break
+                    awards = response.json()
+                except Exception as e:
+                    print(f"SBIR.gov [{agency} {year}]: request failed — {e}")
+                    break
 
-        try:
-            response = requests.get(url, params=params, timeout=15)
-            response.raise_for_status()
-            data = response.json()
-        except Exception as e:
-            print(f"SBIR.gov '{keyword}': request failed — {e}")
-            continue
+                if not isinstance(awards, list):
+                    print(f"SBIR.gov [{agency} {year}]: unexpected response format")
+                    break
 
-        awards = data if isinstance(data, list) else data.get("data", [])
-        print(f"SBIR.gov '{keyword}': {len(awards)} awards returned")
+                print(f"SBIR.gov [{agency} {year}] offset {start}: {len(awards)} awards returned")
 
-        for award in awards:
-            award_id = f"sbir_{award.get('award_number') or award.get('id')}"
-            if award_id in seen_ids:
-                continue
-            seen_ids.add(award_id)
+                for award in awards:
+                    contract = award.get("contract") or award.get("agency_tracking_number") or ""
+                    if not contract or contract in seen_contracts:
+                        continue
+                    seen_contracts.add(contract)
 
-            abstract = award.get("abstract", "") or ""
-            title = award.get("title", "") or award.get("project_title", "") or ""
+                    abstract = award.get("abstract", "") or ""
+                    title = award.get("award_title", "") or ""
 
-            if len(abstract.split()) < 50:
-                continue
+                    if len(abstract.split()) < 100:
+                        continue
 
-            content = (title + " " + abstract).lower()
-            if not any(kw in content for kw in SBIR_GOV_FILTER_KEYWORDS):
-                continue
+                    searchable = (title + " " + abstract).lower()
+                    if not any(kw in searchable for kw in NSF_FILTER_KEYWORDS):
+                        continue
 
-            companies.append({
-                "paper_id": award_id,
-                "title": title,
-                "authors": award.get("pi_name", ""),
-                "institutions": award.get("firm", "") or award.get("company", ""),
-                "abstract": abstract,
-                "publication_date": award.get("award_date", "") or str(award.get("award_year", "")),
-                "citation_count": 0,
-                "source_url": award.get("solicitation_url", "") or f"https://www.sbir.gov/sbirsearch/detail/{award.get('award_number', '')}",
-                "search_term": "SBIR.gov",
-                "source": "SBIR.gov",
-                "pi_email": award.get("pi_email", ""),
-                "award_amount": award.get("award_amount", ""),
-                "company_city": award.get("city", ""),
-                "company_state": award.get("state_code", ""),
-                "agency": award.get("agency", ""),
-                "phase": award.get("phase", ""),
-            })
+                    fn = (award.get("program", "") or "") + " " + (award.get("phase", "") or "")
+                    prefix = "STTR" if "STTR" in fn else "SBIR"
+                    if "Fast-Track" in fn:
+                        grant_type = f"{prefix} Fast-Track"
+                    elif "Phase II" in fn:
+                        grant_type = f"{prefix} Phase II"
+                    elif "Phase I" in fn:
+                        grant_type = f"{prefix} Phase I"
+                    else:
+                        grant_type = None
+
+                    companies.append({
+                        "paper_id": f"sbir_{contract}",
+                        "source": "SBIR.gov",
+                        "title": title,
+                        "abstract": abstract,
+                        "authors": award.get("pi_name", ""),
+                        "institutions": award.get("firm", ""),
+                        "publication_date": award.get("proposal_award_date", ""),
+                        "citation_count": 0,
+                        "source_url": award.get("award_link", ""),
+                        "search_term": "SBIR.gov",
+                        "keywords": award.get("research_area_keywords", ""),
+                        "pi_email": award.get("pi_email", ""),
+                        "poc_email": award.get("poc_email", ""),
+                        "poc_phone": award.get("poc_phone", ""),
+                        "award_amount": award.get("award_amount", ""),
+                        "company_city": award.get("city", ""),
+                        "company_state": award.get("state", ""),
+                        "company_url": award.get("company_url", ""),
+                        "grant_expiry": award.get("contract_end_date", ""),
+                        "grant_type": grant_type,
+                        "agency": award.get("agency", ""),
+                        "branch": award.get("branch", ""),
+                        "number_employees": award.get("number_employees", ""),
+                    })
+
+                # Stop paginating when we've received the last page
+                if len(awards) < page_size:
+                    break
+                start += page_size
 
     print(f"Fetched {len(companies)} relevant SBIR.gov awards")
     return companies

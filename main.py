@@ -1,5 +1,4 @@
 from ingest import fetch_openalex_papers, fetch_nsf_sbir_awards, fetch_sbir_gov
-from filter import filter_papers
 from score import score_items
 from database import upsert_leads
 from config import ENABLE_OPENALEX, ENABLE_NSF_SBIR, ENABLE_SBIR_GOV
@@ -11,7 +10,7 @@ def run_pipeline():
     all_leads = []
 
     if ENABLE_OPENALEX:
-        openalex_papers = filter_papers(fetch_openalex_papers())
+        openalex_papers = fetch_openalex_papers()
         scored_oa = score_items(openalex_papers)
         upsert_leads(scored_oa)
         high_signal_oa = [l for l in scored_oa if l.get("relevance_score", 0) >= 7]

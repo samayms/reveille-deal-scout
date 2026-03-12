@@ -78,11 +78,9 @@ def score_items(items):
 
 if __name__ == "__main__":
     from ingest import fetch_openalex_papers
-    from filter import filter_papers
 
     items = fetch_openalex_papers()
-    filtered = filter_papers(items)
-    scored = score_items(filtered)
+    scored = score_items(items)
 
     scored.sort(key=lambda x: x["relevance_score"], reverse=True)
 
