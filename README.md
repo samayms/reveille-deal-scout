@@ -10,7 +10,7 @@
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │                           main.py                                │
-│                         Orchestrator                             │
+│               Parallel fetch + score + persist                   │
 └─────────────────────────────┬────────────────────────────────────┘
                               │
                               ▼
@@ -20,15 +20,8 @@
 │   ┌─────────────────────────┐   ┌─────────────────────────────┐  │
 │   │      OpenAlex API       │   │    NSF SBIR Grants API      │  │
 │   │    Academic Papers      │   │      Funded Startups        │  │
-│   │      7-day window       │   │       30-day window         │  │
+│   │      7-day window       │   │      180-day window         │  │
 │   └─────────────────────────┘   └─────────────────────────────┘  │
-└─────────────────────────────┬────────────────────────────────────┘
-                              │
-                              ▼
-┌──────────────────────────────────────────────────────────────────┐
-│                          filter.py                               │
-│         Rule-based pre-filter — abstract length + dedup          │
-│                    Reduces Claude API costs 80%+                 │
 └─────────────────────────────┬────────────────────────────────────┘
                               │
                               ▼
@@ -46,7 +39,8 @@
                               ▼
 ┌──────────────────────────────────────────────────────────────────┐
 │                           app.py                                 │
-│   All Leads │ Research Signals │ Funded Companies │ Signal Brief │
+│ Signal Brief │ All Leads │ Research Signals │ Funded Companies │  │
+│                     Federal Grants                               │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -60,10 +54,10 @@ Built for [Reveille VC](https://www.reveillevc.com) — a NYC-based $25M debut f
 
 **Features:**
 - Two live data sources — academic papers (OpenAlex) and federally funded startups (NSF SBIR)
-- 80%+ reduction in Claude API costs via rule-based pre-filtering before any LLM processing
+- 90%+ estimated reduction in LLM calls via rule-based keyword and abstract validation before scoring
 - Claude Haiku scores each record against a configurable fund thesis with a 1–10 score and 2–3 sentence rationale
 - Upsert-on-conflict persistence — safe to run daily without creating duplicates
-- Multi-tab Streamlit dashboard with lead status management
+- Five-tab Streamlit dashboard with lead status management and pipeline refresh
 - SBIR.gov integration implemented and ready — enable by setting `ENABLE_SBIR_GOV=True` in `config.py` once the program API is restored
 
 ---
@@ -72,16 +66,15 @@ Built for [Reveille VC](https://www.reveillevc.com) — a NYC-based $25M debut f
 
 ```
 reveille-scout/
-├── main.py          # Orchestrator — runs all four pipeline stages
-├── ingest.py        # OpenAlex + NSF SBIR REST API ingestion
-├── filter.py        # Rule-based pre-filter before LLM processing
+├── main.py          # Parallel fetch orchestration, scoring, and persistence
+├── ingest.py        # OpenAlex + NSF SBIR REST API ingestion and validation
 ├── score.py         # Claude Haiku scoring with error handling
 ├── database.py      # Supabase upsert, fetch, and status updates
 ├── app.py           # Streamlit multi-tab dashboard
 ├── config.py        # Pipeline settings and search configuration
 ├── .env             # API credentials and secrets (gitignored)
 ├── .env.example     # Credentials template — copy to .env to get started
-├── requirements.txt # anthropic, supabase, streamlit, requests
+├── requirements.txt # anthropic, supabase, requests, streamlit, pandas
 └── .gitignore
 ```
 
@@ -92,8 +85,8 @@ reveille-scout/
 | Source | Status | Lookback | Best For |
 |--------|--------|----------|----------|
 | OpenAlex | ✅ Active | 7 days | Research signals, authors to contact |
-| NSF SBIR Grants | ✅ Active | 30 days | Fundable companies with PI email + award amount |
-| SBIR.gov | ⏸️ Disabled | 30 days | DOD/DOE/NASA funded startups (March 2026) |
+| NSF SBIR Grants | ✅ Active | 180 days | Fundable companies with PI email + award amount |
+| SBIR.gov | ⏸️ Disabled | Current + prior year pagination | DOD/DOE funded startups (March 2026) |
 
 ---
 
@@ -114,7 +107,7 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Create a Supabase project, run the table schema in the SQL Editor, then fill in `.env` with your credentials.
+Create a Supabase project, create the `items` table used by `database.py`, then fill in `.env` with your credentials.
 
 ---
 
@@ -129,17 +122,21 @@ Credentials live in `.env` (gitignored). Pipeline behavior is controlled from `c
 | `ANTHROPIC_API_KEY` | Anthropic API key |
 | `SUPABASE_URL` | Supabase project URL |
 | `SUPABASE_KEY` | Supabase anon public key |
+| `EMAIL` | Optional contact email sent to OpenAlex as a courtesy identifier |
 
 **`config.py`**
 
 | Field | Type | Description |
 |-------|------|-------------|
+| `ENABLE_OPENALEX` | bool | Toggle OpenAlex ingestion |
+| `ENABLE_NSF_SBIR` | bool | Toggle NSF SBIR/STTR ingestion |
+| `ENABLE_SBIR_GOV` | bool | Toggle SBIR.gov ingestion |
 | `SEARCH_TERMS` | list[list[str]] | OpenAlex terms — inner list AND-joined, outer list OR-joined |
 | `NSF_FILTER_KEYWORDS` | list[str] | Keywords validated against NSF abstracts post-fetch |
 | `OPEN_ALEX_DAYS_BACK` | int | OpenAlex lookback window (default: 7) |
-| `NSF_DAYS_BACK` | int | NSF SBIR lookback window (default: 30) |
+| `NSF_DAYS_BACK` | int | NSF SBIR lookback window (default: 180) |
 | `RESULTS_PER_SEARCH` | int | Max results per OpenAlex search term (default: 10) |
-| `EMAIL` | str | Passed to OpenAlex as a courtesy identifier |
+| `NSF_PROGRAM_NAMES` | list[str] | NSF program filters, currently `SBIR` and `STTR` |
 
 ---
 
@@ -152,30 +149,27 @@ python3 main.py
 
 ```
 ==================================================
-REVEILLE DEAL SCOUT — PIPELINE STARTING
+Fetch pipeline starting...
 ==================================================
-
-[1/4] INGESTING...
-Fetched 28 valid papers from OpenAlex
-Fetched 11 relevant NSF SBIR grants
-Total ingested: 39 (28 OpenAlex, 11 NSF)
-
-[2/4] FILTERING...
-After filter: 32 leads
-
-[3/4] SCORING...
-Scored 32 leads — 9 scored 7+
-
-[4/4] SAVING TO SUPABASE...
-Upserted 32 leads to Supabase
+Found 142 existing records in database — skipping these.
+Fetching papers from OpenAlex...
+Fetching NSF SBIR grants...
+OpenAlex: 28 fetched, 6 new
+Scoring 6 items with Claude (up to 10 concurrent)...
+Successfully scored 6 items
+Upserted 6 leads to Supabase
+Scored 6 OpenAlex papers: 2 scored 7+
+NSF SBIR: 11 fetched, 4 new
+Scoring 4 items with Claude (up to 10 concurrent)...
+Successfully scored 4 items
+Upserted 4 leads to Supabase
+Scored 4 NSF leads: 1 scored 7+
 
 ==================================================
-PIPELINE COMPLETE — 9 high signal leads (7+)
+Pipeline complete
+Total scored: 10
+High signal (7+): 3
 ==================================================
-
-TOP LEADS:
-  [9/10] Grid-scale solid-state battery for military microgrids
-  [8/10] Autonomous counter-UAS detection via passive RF analysis
 ```
 
 **Launch the dashboard:**

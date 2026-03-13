@@ -1,4 +1,5 @@
 import html as _html
+import re
 import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
@@ -6,12 +7,18 @@ from database import fetch_leads, update_status
 from main import run_pipeline
 
 STATUS_OPTIONS = ["New", "Reviewing", "Pass"]
+SIDEBAR_QUERY_KEY = "sidebar"
+VALID_SIDEBAR_STATES = {"expanded", "collapsed"}
+
+_initial_sidebar_state = st.query_params.get(SIDEBAR_QUERY_KEY, "expanded")
+if _initial_sidebar_state not in VALID_SIDEBAR_STATES:
+    _initial_sidebar_state = "expanded"
 
 
 st.set_page_config(
     page_title="Reveille · Deal Scout",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state=_initial_sidebar_state,
 )
 
 # ── Styles ────────────────────────────────────────────────────────────────────
@@ -398,16 +405,6 @@ details[data-testid="stExpander"] {
     border-top: 1px solid var(--border);
 }
 
-/* Status label above selectbox */
-.rl-status-label {
-    font-family: var(--mono);
-    font-size: 9.5px;
-    text-transform: uppercase;
-    letter-spacing: 0.14em;
-    color: var(--text-muted);
-    margin-bottom: 4px;
-}
-
 /* Section headers */
 .rl-section-head {
     display: flex;
@@ -432,106 +429,6 @@ details[data-testid="stExpander"] {
     text-transform: uppercase;
     letter-spacing: 0.12em;
     color: var(--text-dim);
-}
-
-/* Cards */
-.rl-card {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-left: 3px solid var(--border);
-    padding: 18px 20px;
-    margin-bottom: 10px;
-    border-radius: 0 3px 3px 0;
-    transition: background 0.1s;
-}
-.rl-card:hover { background: var(--bg-raised); }
-
-/* Score 9+ cards get teal accent — visually exceptional */
-.rl-card.rl-card-top-signal {
-    border-left-color: var(--teal);
-    background: linear-gradient(90deg, rgba(23,181,132,0.04) 0%, var(--bg-card) 60%);
-}
-.rl-card.rl-card-top-signal:hover {
-    background: linear-gradient(90deg, rgba(23,181,132,0.07) 0%, var(--bg-raised) 60%);
-}
-
-.rl-card-top {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 11px;
-}
-.rl-source {
-    font-family: var(--mono);
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    color: var(--text-dim);
-}
-.rl-score {
-    font-family: var(--mono);
-    font-size: 11px;
-    font-weight: 600;
-    padding: 4px 10px;
-    border-radius: 2px;
-    letter-spacing: 0.05em;
-}
-.rl-score-high {
-    color: var(--teal);
-    background: var(--teal-soft);
-    border: 1px solid var(--teal-border);
-}
-.rl-score-mid {
-    color: var(--amber);
-    background: var(--amber-soft);
-    border: 1px solid var(--amber-border);
-}
-.rl-card-title {
-    font-family: var(--serif);
-    font-size: 20px;
-    font-weight: 600;
-    color: var(--text);
-    line-height: 1.4;
-    margin: 0 0 6px 0;
-    letter-spacing: -0.01em;
-}
-.rl-card-author {
-    font-family: var(--mono);
-    font-size: 11px;
-    color: var(--text-dim);
-    margin-bottom: 10px;
-}
-.rl-card-sep {
-    border: none;
-    border-top: 1px solid var(--border-faint);
-    margin: 8px 0;
-}
-.rl-card-why {
-    font-size: 13px;
-    line-height: 1.7;
-    color: var(--text-dim);
-}
-.rl-card-footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-top: 12px;
-}
-.rl-card-link {
-    font-family: var(--mono);
-    font-size: 11px;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--text-dim);
-    text-decoration: none;
-    border-bottom: 1px solid var(--border);
-    padding-bottom: 1px;
-    transition: color 0.1s, border-color 0.1s;
-}
-.rl-card-link:hover {
-    color: var(--amber);
-    border-bottom-color: var(--amber);
 }
 
 /* ── Source badges ────────────────────────────────────────────────────────── */
@@ -606,7 +503,7 @@ details[data-testid="stExpander"] {
     color: var(--text-dim);
     letter-spacing: 0.02em;
 }
-/* Status pill — read-only display inside card */
+/* Status pill */
 .rl-rc-status-pill {
     font-family: var(--mono);
     font-size: 11px;
@@ -795,16 +692,6 @@ details[data-testid="stExpander"] {
     padding-top: 10px;
     border-top: 1px solid var(--border-faint);
 }
-.rl-rc-footer-inline {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    flex-wrap: wrap;
-}
-.rl-rc-footer-inline-right {
-    flex: 1;
-    min-width: 0;
-}
 /* Meta strip: chips left, source link right, all in one horizontal band */
 .rl-rc-meta-strip {
     display: flex;
@@ -860,139 +747,6 @@ details[data-testid="stExpander"] {
     margin-right: 4px;
     margin-bottom: 4px;
 }
-.rl-card-status-wrap {
-    position: relative;
-    display: inline-block;
-    width: 112px;
-    z-index: 6;
-    pointer-events: auto;
-    flex: 0 0 auto;
-}
-.rl-card-status-wrap::after {
-    content: "▾";
-    position: absolute;
-    right: 7px;
-    top: 50%;
-    transform: translateY(-52%);
-    font-family: var(--mono);
-    font-size: 9px;
-    color: var(--amber);
-    pointer-events: none;
-    transition: transform 0.12s ease;
-}
-.rl-card-status-wrap.is-open::after {
-    transform: translateY(-52%) rotate(180deg);
-}
-.rl-card-status-trigger {
-    width: 100%;
-    height: 24px;
-    background: rgba(201,139,14,0.08);
-    border: 1px solid var(--amber-border);
-    border-radius: 0;
-    color: var(--amber);
-    font-family: var(--mono);
-    font-size: 9px;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    padding: 0 18px 0 8px;
-    outline: none;
-    cursor: pointer;
-    box-shadow: none;
-    line-height: 22px;
-    text-align: left;
-    position: relative;
-    z-index: 7;
-}
-.rl-card-status-trigger:hover,
-.rl-card-status-trigger:focus {
-    border-color: rgba(201,139,14,0.45);
-    color: var(--amber);
-    background: rgba(201,139,14,0.12);
-}
-.rl-card-status-menu {
-    position: absolute;
-    left: 0;
-    top: calc(100% + 6px);
-    min-width: 144px;
-    background: var(--bg-card);
-    border: 1px solid var(--amber-border);
-    box-shadow: 0 14px 28px rgba(0,0,0,0.35);
-    padding: 6px;
-    display: none;
-    flex-direction: column;
-    gap: 4px;
-    z-index: 25;
-    pointer-events: auto;
-}
-.rl-card-status-wrap.is-open .rl-card-status-menu {
-    display: flex;
-}
-.rl-card-status-option {
-    display: block;
-    width: 100%;
-    border: 1px solid transparent;
-    background: transparent;
-    color: var(--text-dim);
-    font-family: var(--mono);
-    font-size: 10px;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    text-align: left;
-    padding: 7px 9px;
-    cursor: pointer;
-    position: relative;
-    z-index: 26;
-    text-decoration: none;
-}
-.rl-card-status-option:link,
-.rl-card-status-option:visited,
-.rl-card-status-option:active {
-    color: var(--text-dim);
-    text-decoration: none;
-}
-.rl-card-status-option:hover,
-.rl-card-status-option.is-active {
-    border-color: var(--amber-border);
-    background: rgba(201,139,14,0.08);
-    color: var(--amber);
-    text-decoration: none;
-}
-.rl-status-action-anchor {
-    display: none !important;
-}
-[data-testid="element-container"]:has(.rl-status-action-anchor) {
-    display: none !important;
-}
-[data-testid="element-container"]:has(.rl-status-action-anchor) + [data-testid="element-container"] {
-    position: absolute !important;
-    left: -9999px !important;
-    top: 0 !important;
-    width: 1px !important;
-    height: 1px !important;
-    overflow: hidden !important;
-    opacity: 0 !important;
-    pointer-events: none !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    min-height: 0 !important;
-}
-[data-testid="element-container"]:has(.rl-status-action-anchor) + [data-testid="element-container"] .stButton,
-[data-testid="element-container"]:has(.rl-status-action-anchor) + [data-testid="element-container"] button {
-    width: 1px !important;
-    height: 1px !important;
-    min-height: 1px !important;
-    padding: 0 !important;
-    border: 0 !important;
-    font-size: 0 !important;
-    line-height: 0 !important;
-}
-.rl-research-card.rl-status-open .rl-card-overlay {
-    pointer-events: none;
-}
-.rl-research-card.rl-status-open {
-    z-index: 80;
-    isolation: isolate;
-}
 
 /* ── Page header (DEAL SCOUT) ─────────────────────────────────────────────── */
 .rl-page-header {
@@ -1023,26 +777,6 @@ details[data-testid="stExpander"] {
         flex: 1 1 100% !important;
     }
 }
-
-/* ── Card CTA (view detail link) ─────────────────────────────────────────── */
-.rl-card-cta {
-    display: flex;
-    justify-content: flex-end;
-    align-items: center;
-    margin-top: 12px;
-    padding-top: 8px;
-    border-top: 1px solid var(--border-faint);
-}
-.rl-view-link {
-    font-family: var(--mono);
-    font-size: 11px;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: var(--amber);
-    text-decoration: none;
-    transition: opacity 0.15s;
-}
-.rl-view-link:hover { opacity: 0.6; }
 
 /* ── Lead Detail Page ─────────────────────────────────────────────────────── */
 .rl-detail-header {
@@ -1183,53 +917,123 @@ details[data-testid="stExpander"] {
 """, unsafe_allow_html=True)
 
 
-# ── Force sidebar open reliably ──────────────────────────────────────────────
+# ── Persist sidebar collapse / expand state ─────────────────────────────────
 components.html("""
 <script>
 (function () {
-  const doc = window.parent.document;
+  const parentWindow = window.parent;
+  const doc = parentWindow.document;
+  const STORAGE_KEY = "reveille.sidebar.state";
+  const QUERY_KEY = "sidebar";
+  const VALID = new Set(["expanded", "collapsed"]);
 
-  function clearSidebarMemory() {
-    try {
-      Object.keys(window.parent.localStorage)
-        .filter(k => k.startsWith("stSidebarCollapsed"))
-        .forEach(k => window.parent.localStorage.removeItem(k));
-    } catch (e) {}
+  function getSidebar() {
+    return doc.querySelector('[data-testid="stSidebar"], section[data-testid="stSidebar"]');
   }
 
-  function forceExpand() {
+  function readUrlState() {
     try {
-      clearSidebarMemory();
-      const expandBtn = doc.querySelector('[data-testid="stExpandSidebarButton"] button');
-      if (expandBtn) expandBtn.click();
-
-      // Directly un-collapse sidebar if Streamlit applied collapsed styles
-      ['[data-testid="stSidebar"]', 'section[data-testid="stSidebar"]'].forEach(sel => {
-        const el = doc.querySelector(sel);
-        if (el) {
-          el.style.transform = "translateX(0)";
-          el.style.marginLeft = "0";
-          el.setAttribute("aria-expanded", "true");
-        }
-      });
-    } catch (e) {}
+      const url = new URL(parentWindow.location.href);
+      const value = url.searchParams.get(QUERY_KEY);
+      return VALID.has(value) ? value : null;
+    } catch (e) {
+      return null;
+    }
   }
 
-  forceExpand();
+  function readStoredState() {
+    try {
+      const value = parentWindow.localStorage.getItem(STORAGE_KEY);
+      return VALID.has(value) ? value : null;
+    } catch (e) {
+      return null;
+    }
+  }
 
-  // Repeat for 2s to beat Streamlit hydration timing — stops before user can interact
+  function getCurrentState() {
+    const sidebar = getSidebar();
+    if (!sidebar) return null;
+    return sidebar.getAttribute("aria-expanded") === "false" ? "collapsed" : "expanded";
+  }
+
+  function writeState(state) {
+    if (!VALID.has(state)) return;
+    try {
+      parentWindow.localStorage.setItem(STORAGE_KEY, state);
+    } catch (e) {}
+
+    try {
+      const url = new URL(parentWindow.location.href);
+      if (url.searchParams.get(QUERY_KEY) !== state) {
+        url.searchParams.set(QUERY_KEY, state);
+        parentWindow.history.replaceState({}, "", url.toString());
+      }
+    } catch (e) {}
+
+    if (doc.body) {
+      doc.body.dataset.rlSidebarState = state;
+    }
+  }
+
+  function desiredState() {
+    return readUrlState() || readStoredState() || "expanded";
+  }
+
+  function applyDesiredState() {
+    const sidebar = getSidebar();
+    if (!sidebar) return;
+
+    const current = getCurrentState();
+    const desired = desiredState();
+
+    if (current === desired) {
+      writeState(current);
+      return;
+    }
+
+    const selector = desired === "collapsed"
+      ? '[data-testid="stSidebarCollapseButton"] button'
+      : '[data-testid="stExpandSidebarButton"] button';
+    const button = doc.querySelector(selector);
+    if (!button) return;
+
+    button.click();
+    setTimeout(() => {
+      const next = getCurrentState();
+      if (next) writeState(next);
+    }, 0);
+  }
+
+  function bindSidebarPersistence() {
+    if (doc.body?.dataset.rlSidebarPersistenceBound === "1") return;
+    if (doc.body) doc.body.dataset.rlSidebarPersistenceBound = "1";
+
+    const observer = new MutationObserver(() => {
+      const current = getCurrentState();
+      if (current) writeState(current);
+    });
+    observer.observe(doc.body, {
+      attributes: true,
+      attributeFilter: ["aria-expanded"],
+      childList: true,
+      subtree: true,
+    });
+  }
+
+  applyDesiredState();
+  bindSidebarPersistence();
+
   let attempts = 0;
   const interval = setInterval(() => {
-    forceExpand();
-    if (++attempts >= 13) clearInterval(interval); // ~2 seconds
+    applyDesiredState();
+    if (++attempts >= 13) clearInterval(interval);
   }, 150);
 
-  // MutationObserver as backup during hydration window — childList only to avoid loop
-  const observer = new MutationObserver(() => forceExpand());
-  observer.observe(doc.body, { childList: true, subtree: true });
+  const hydrationObserver = new MutationObserver(() => applyDesiredState());
+  hydrationObserver.observe(doc.body, { childList: true, subtree: true });
 
   setTimeout(() => {
-    observer.disconnect();
+    hydrationObserver.disconnect();
     clearInterval(interval);
   }, 2000);
 })();
@@ -1293,12 +1097,29 @@ def safe_status(val) -> str:
     return val if val in STATUS_OPTIONS else "New"
 
 
+def sync_status_widget_state(widget_key: str, current_status: str) -> None:
+    db_state_key = f"__db_status__{widget_key}"
+    widget_value = st.session_state.get(widget_key)
+    previous_db_status = st.session_state.get(db_state_key)
+
+    pending_user_change = (
+        widget_key in st.session_state
+        and widget_value in STATUS_OPTIONS
+        and previous_db_status in STATUS_OPTIONS
+        and widget_value != previous_db_status
+    )
+
+    if not pending_user_change and widget_value != current_status:
+        st.session_state[widget_key] = current_status
+
+    st.session_state[db_state_key] = current_status
+
+
 def _e(s) -> str:
     return _html.escape(str(s)) if s else ""
 
 
 def clean_text_field(val) -> str:
-    import re
     if not val:
         return ""
     s = val if isinstance(val, str) else str(val)
@@ -1324,8 +1145,28 @@ def _fmt_amt(val) -> str:
         return str(val or "")
 
 
+def _fmt_phone(val) -> str:
+    raw = coerce_str(val)
+    digits = re.sub(r"\D", "", raw)
+    if len(digits) == 10:
+        return f"({digits[:3]}) {digits[3:6]}-{digits[6:]}"
+    if len(digits) == 11 and digits.startswith("1"):
+        return f"({digits[1:4]}) {digits[4:7]}-{digits[7:]}"
+    return raw
+
+
+def _tel_href(val) -> str:
+    raw = coerce_str(val)
+    digits = re.sub(r"\D", "", raw)
+    if len(digits) == 10:
+        return f"+1{digits}"
+    if len(digits) == 11 and digits.startswith("1"):
+        return f"+{digits}"
+    return raw
+
+
 def _card_meta(row, source: str) -> str:
-    """Return compact meta HTML for NSF/SBIR cards; empty for OpenAlex (venue is in toprow)."""
+    """Return compact meta HTML for NSF/SBIR cards."""
     items = []
     s = (source or "").lower()
     if "nsf" in s:
@@ -1349,44 +1190,18 @@ def _card_meta(row, source: str) -> str:
             items.append(f"<b>Award</b>{_fmt_amt(row.get('award_amount'))}")
         if row.get("poc_email"):
             items.append(f"<b>POC</b>{_e(row.get('poc_email', ''))}")
-    else:  # OpenAlex — venue/link rendered in toprow instead
-        if row.get("funding_source"):
-            items.append(f"<b>Funding</b>{_e(row.get('funding_source', ''))}")
-        # publication_venue is intentionally omitted here (shown in toprow)
+    else:
+        return ""
     if not items:
         return ""
     inner = "".join(f'<span class="rl-meta-item">{it}</span>' for it in items)
     return f'<div class="rl-meta-grid">{inner}</div>'
 
 
-def _card_status_select_html(paper_id: str, current_tab: str, cur_stat: str, action_prefix: str) -> str:
-    if not paper_id:
-        return ""
-    options_html = "".join(
-        f'<button type="button" class="rl-card-status-option{" is-active" if opt == cur_stat else ""}" '
-        f'data-action-id="{_e(f"{action_prefix}_{opt.lower()}")}" '
-        f'data-status-value="{_e(opt)}">{_e(opt)}</button>'
-        for opt in STATUS_OPTIONS
-    )
-    return (
-        f'<div class="rl-card-status-wrap" '
-        f'data-paper-id="{_e(paper_id)}" '
-        f'data-tab="{_e(current_tab)}">'
-        f'<button type="button" class="rl-card-status-trigger" aria-haspopup="true" aria-expanded="false">'
-        f'{_e(cur_stat)}'
-        f'</button>'
-        f'<div class="rl-card-status-menu">'
-        f'{options_html}'
-        f'</div>'
-        f'</div>'
-    )
-
-
 def render_card(
     row,
     key_suffix: str,
     current_tab: str = "brief",
-    show_abstract: bool = True,
     abstract_limit: int = 600,
 ):
     """Render a research-style card with integrated status footer."""
@@ -1423,7 +1238,7 @@ def render_card(
         )
 
     abstract_block = ""
-    if show_abstract and abstract_txt:
+    if abstract_txt:
         ellipsis = "&hellip;" if len(abstract_raw) > abstract_limit else ""
         abstract_block = (
             f'<div class="rl-rc-abstract">'
@@ -1442,18 +1257,7 @@ def render_card(
         )
 
     # ── Top row: OpenAlex and NSF get source link in the header top-right
-    if is_openalex:
-        src_link = (
-            f'<a class="rl-src-link" href="{_e(url)}">Source</a>'
-            if url else ""
-        )
-        topright_html = (
-            f'<div class="rl-rc-topright">'
-            f'<div class="rl-rc-topright-row">{date_span}{src_link}</div>'
-            f'</div>'
-        )
-        toprow_html = f'<div class="rl-research-toprow">{chip_html}{badge_html}{topright_html}</div>'
-    elif is_nsf:
+    if is_openalex or is_nsf:
         src_link = (
             f'<a class="rl-src-link" href="{_e(url)}">Source</a>'
             if url else ""
@@ -1524,11 +1328,12 @@ def render_card(
     ])
 
     st.markdown(card_html, unsafe_allow_html=True)
+    widget_key = f"status_{key_suffix}"
+    sync_status_widget_state(widget_key, cur_stat)
     new_status = st.selectbox(
         "Status",
         STATUS_OPTIONS,
-        index=STATUS_OPTIONS.index(cur_stat) if cur_stat in STATUS_OPTIONS else 0,
-        key=f"status_{key_suffix}",
+        key=widget_key,
         label_visibility="collapsed",
     )
 
@@ -1636,10 +1441,11 @@ def render_detail_page(df_all):
 
     # ── Status control ────────────────────────────────────────────────────────
     st.markdown('<div class="rl-detail-sec-lbl" style="margin-top:1.5rem">Status</div>', unsafe_allow_html=True)
+    detail_widget_key = f"detail_status_{pid_s}"
+    sync_status_widget_state(detail_widget_key, cur_stat)
     new_status = st.selectbox(
         "Status", STATUS_OPTIONS,
-        index=STATUS_OPTIONS.index(cur_stat) if cur_stat in STATUS_OPTIONS else 0,
-        key=f"detail_status_{pid_s}",
+        key=detail_widget_key,
         label_visibility="collapsed",
     )
     if new_status != cur_stat:
@@ -1697,7 +1503,7 @@ def render_detail_page(df_all):
             right_fields.append(_detail_field("Location",          loc))
         if row.get("company_phone"):
             ph = coerce_str(row["company_phone"])
-            right_fields.append(_detail_field("Company Phone",     ph,        link_href=f"tel:{ph}"))
+            right_fields.append(_detail_field("Company Phone",     _fmt_phone(ph), link_href=f"tel:{_tel_href(ph)}"))
         if row.get("company_url"):
             co = coerce_str(row["company_url"])
             right_fields.append(_detail_field("Company Website",   co,        link_href=co))
@@ -1741,7 +1547,7 @@ def render_detail_page(df_all):
             right_fields.append(_detail_field("POC Phone",         poc_phone, link_href=f"tel:{poc_phone}"))
         if row.get("company_phone"):
             ph = coerce_str(row["company_phone"])
-            right_fields.append(_detail_field("Company Phone",     ph,        link_href=f"tel:{ph}"))
+            right_fields.append(_detail_field("Company Phone",     _fmt_phone(ph), link_href=f"tel:{_tel_href(ph)}"))
         if row.get("company_url"):
             co = coerce_str(row["company_url"])
             right_fields.append(_detail_field("Company Website",   co,        link_href=co))
@@ -1770,24 +1576,6 @@ def render_detail_page(df_all):
             f'<div class="rl-detail-kw">{kw_html}</div>',
             unsafe_allow_html=True,
         )
-
-
-def consume_pending_status_change() -> None:
-    paper_id = st.query_params.get("set_status_id", "")
-    next_status = st.query_params.get("set_status_value", "")
-    if not paper_id and not next_status:
-        return
-
-    st.query_params.pop("set_status_id", None)
-    st.query_params.pop("set_status_value", None)
-
-    if paper_id and next_status in STATUS_OPTIONS:
-        update_status(str(paper_id), str(next_status))
-        st.cache_data.clear()
-
-    st.rerun()
-
-
 def sync_tab_query_param() -> None:
     components.html(
         """
@@ -1808,65 +1596,6 @@ def sync_tab_query_param() -> None:
             const url = new URL(parentWindow.location.href);
             url.searchParams.set("tab", tabKey);
             parentWindow.history.replaceState({}, "", url.toString());
-          };
-
-          const bindStatusControls = () => {
-            const closeMenus = () => {
-              parentDoc.querySelectorAll(".rl-card-status-wrap.is-open").forEach((wrap) => {
-                wrap.classList.remove("is-open");
-                const trigger = wrap.querySelector(".rl-card-status-trigger");
-                if (trigger) trigger.setAttribute("aria-expanded", "false");
-                const card = wrap.closest(".rl-research-card");
-                if (card) card.classList.remove("rl-status-open");
-              });
-            };
-
-            if (parentDoc.body.dataset.rlStatusDocBound !== "1") {
-              parentDoc.body.dataset.rlStatusDocBound = "1";
-              parentDoc.addEventListener("pointerdown", (event) => {
-                if (event.target && event.target.closest(".rl-card-status-wrap")) {
-                  return;
-                }
-                closeMenus();
-              });
-            }
-
-            const wraps = Array.from(parentDoc.querySelectorAll(".rl-card-status-wrap"));
-            wraps.forEach((wrap) => {
-              if (wrap.dataset.rlStatusBound === "1") return;
-              wrap.dataset.rlStatusBound = "1";
-
-              const trigger = wrap.querySelector(".rl-card-status-trigger");
-              const options = Array.from(wrap.querySelectorAll(".rl-card-status-option"));
-              if (trigger) {
-                trigger.addEventListener("pointerdown", (event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  const shouldOpen = !wrap.classList.contains("is-open");
-                  closeMenus();
-                  if (shouldOpen) {
-                    wrap.classList.add("is-open");
-                    trigger.setAttribute("aria-expanded", "true");
-                    const card = wrap.closest(".rl-research-card");
-                    if (card) card.classList.add("rl-status-open");
-                  }
-                });
-              }
-
-              options.forEach((optionEl) => {
-                optionEl.addEventListener("pointerdown", (event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  const actionId = optionEl.dataset.actionId;
-                  if (!actionId) return;
-                  const anchor = parentDoc.querySelector(`.rl-status-action-anchor[data-action-id="${actionId}"]`);
-                  const button = anchor?.closest('[data-testid="element-container"]')?.nextElementSibling?.querySelector("button");
-                  if (!button) return;
-                  closeMenus();
-                  button.click();
-                });
-              });
-            });
           };
 
           const syncTabs = () => {
@@ -1894,7 +1623,6 @@ def sync_tab_query_param() -> None:
           let attempts = 0;
           const interval = setInterval(() => {
             syncTabs();
-            bindStatusControls();
             if (++attempts >= 30) {
               clearInterval(interval);
             }
@@ -1902,23 +1630,17 @@ def sync_tab_query_param() -> None:
 
           const observer = new MutationObserver(() => {
             syncTabs();
-            bindStatusControls();
           });
           observer.observe(parentDoc.body, { childList: true, subtree: true });
 
           setTimeout(() => observer.disconnect(), 10000);
 
           syncTabs();
-          bindStatusControls();
         })();
         </script>
         """,
         height=0,
     )
-
-
-# ── Sidebar ────────────────────────────────────────────────────────────────────
-consume_pending_status_change()
 
 with st.sidebar:
     st.markdown("""
@@ -1968,7 +1690,7 @@ if _detail:
 st.markdown("""
 <div class="rl-page-header">
     <span class="rl-page-wordmark">DEAL SCOUT</span>
-    <span class="rl-page-tagline">Signal Intelligence &mdash; Reveille VC</span>
+    <span class="rl-page-tagline">Signal Intelligence | Reveille VC</span>
 </div>
 """, unsafe_allow_html=True)
 
