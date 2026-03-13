@@ -54,11 +54,20 @@ Built for [Reveille VC](https://www.reveillevc.com), a NYC-based $25M debut fund
 **Live app:** [reveille-deal-scout.streamlit.app](https://reveille-deal-scout.streamlit.app)
 
 **Features:**
-- Two live data sources: academic papers (OpenAlex) and federally funded startups (NSF SBIR)
+- Two live data sources: academic papers (OpenAlex) and federally funded startups (NSF SBIR), plus optional SBIR.gov ingestion
+- Parallel multi-source fetch orchestration and concurrent Claude scoring
 - 90%+ estimated reduction in LLM calls via rule-based keyword and abstract validation before scoring
+- Existing-record skips before scoring to avoid rescoring leads already stored in Supabase
+- OpenAlex abstract reconstruction from inverted-index responses before downstream scoring
+- Source-specific scoring prompts for OpenAlex, NSF SBIR, and SBIR.gov records
 - Claude Haiku scores each record against a configurable fund thesis with a 1-10 score and 2-3 sentence rationale
+- OpenAlex lead enrichment with authors, institutions, keywords, funding source, venue, record type, publication date, and citation count
+- NSF/SBIR lead enrichment with PI contact info, award amount, company location, grant type, and program metadata
 - Upsert-on-conflict persistence; safe to run daily without creating duplicates
-- Five-tab Streamlit dashboard with lead status management and pipeline refresh
+- Supabase-backed lead status management (`New`, `Reviewing`, `Pass`)
+- Five-tab Streamlit dashboard with Signal Brief, All Leads, Research Signals, Funded Companies, and Federal Grants views
+- Dashboard filtering by source, score, and status, plus full lead detail pages
+- Live pipeline refresh from the dashboard with cached reads and summary metrics
 - SBIR.gov integration implemented and ready; enable by setting `ENABLE_SBIR_GOV=True` in `config.py` once the program API is restored
 
 ---
