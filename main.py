@@ -31,34 +31,25 @@ def run_pipeline():
                 print(f"  Fetch error [{name}]: {e}")
                 fetched[name] = []
 
+    source_labels = {"openalex": "OpenAlex", "nsf": "NSF SBIR", "sbir_gov": "SBIR.gov"}
+
+    def process_source(name, items):
+        label = source_labels[name]
+        new_items = [p for p in items if p["paper_id"] not in existing_ids]
+        print(f"{label}: {len(items)} fetched, {len(new_items)} new")
+        scored = score_items(new_items)
+        upsert_leads(scored)
+        print(f"Scored {len(scored)} {label} leads: {sum(1 for l in scored if l.get('relevance_score', 0) >= 7)} scored 7+")
+        return scored
+
     all_leads = []
-
-    if "openalex" in fetched:
-        openalex_papers = fetched["openalex"]
-        new_oa = [p for p in openalex_papers if p["paper_id"] not in existing_ids]
-        print(f"OpenAlex: {len(openalex_papers)} fetched, {len(new_oa)} new")
-        scored_oa = score_items(new_oa)
-        upsert_leads(scored_oa)
-        print(f"Scored {len(scored_oa)} OpenAlex papers: {sum(1 for l in scored_oa if l.get('relevance_score', 0) >= 7)} scored 7+")
-        all_leads.extend(scored_oa)
-
-    if "nsf" in fetched:
-        nsf_leads = fetched["nsf"]
-        new_nsf = [p for p in nsf_leads if p["paper_id"] not in existing_ids]
-        print(f"NSF SBIR: {len(nsf_leads)} fetched, {len(new_nsf)} new")
-        scored_nsf = score_items(new_nsf)
-        upsert_leads(scored_nsf)
-        print(f"Scored {len(scored_nsf)} NSF leads: {sum(1 for l in scored_nsf if l.get('relevance_score', 0) >= 7)} scored 7+")
-        all_leads.extend(scored_nsf)
-
-    if "sbir_gov" in fetched:
-        sbir_gov_leads = fetched["sbir_gov"]
-        new_sbir = [p for p in sbir_gov_leads if p["paper_id"] not in existing_ids]
-        print(f"SBIR.gov: {len(sbir_gov_leads)} fetched, {len(new_sbir)} new")
-        scored_sbir_gov = score_items(new_sbir)
-        upsert_leads(scored_sbir_gov)
-        print(f"Scored {len(scored_sbir_gov)} SBIR.gov leads: {sum(1 for l in scored_sbir_gov if l.get('relevance_score', 0) >= 7)} scored 7+")
-        all_leads.extend(scored_sbir_gov)
+    with ThreadPoolExecutor(max_workers=len(fetched) or 1) as executor:
+        futures = {executor.submit(process_source, name, items): name for name, items in fetched.items()}
+        for future in as_completed(futures):
+            try:
+                all_leads.extend(future.result())
+            except Exception as e:
+                print(f"  Error processing [{futures[future]}]: {e}")
 
     high_signal = sorted(
         [l for l in all_leads if l.get("relevance_score", 0) >= 7],
