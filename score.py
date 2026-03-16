@@ -73,9 +73,9 @@ def score_item(item):
 def score_items(items, max_workers=MAX_SCORING_WORKERS):
     if not items:
         return []
-    print(f"Scoring {len(items)} items with Claude (up to {max_workers} concurrent)...")
 
     scored = []
+    print(f"Scoring {len(items)} items with Claude (up to {max_workers} concurrent)...")
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {executor.submit(score_item, item): item for item in items}
         for future in as_completed(futures):

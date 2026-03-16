@@ -55,7 +55,7 @@ Built for [Reveille VC](https://www.reveillevc.com), a NYC-based $25M debut fund
 
 **Features:**
 - Two live data sources: academic papers (OpenAlex) and federally funded startups (NSF SBIR), plus optional SBIR.gov ingestion
-- Parallel multi-source fetch orchestration and concurrent Claude scoring
+- Parallel multi-source fetch orchestration and concurrent Claude scoring with global semaphore rate limiting and exponential backoff
 - 90%+ estimated reduction in LLM calls via rule-based keyword and abstract validation before scoring
 - Existing-record skips before scoring to avoid rescoring leads already stored in Supabase
 - OpenAlex abstract reconstruction from inverted-index responses before downstream scoring
@@ -144,8 +144,9 @@ Credentials live in `.env` (gitignored). Pipeline behavior is controlled from `c
 | `SEARCH_TERMS` | list[list[str]] | OpenAlex terms; inner list AND-joined, outer list OR-joined |
 | `NSF_FILTER_KEYWORDS` | list[str] | Keywords validated against NSF abstracts post-fetch |
 | `OPEN_ALEX_DAYS_BACK` | int | OpenAlex lookback window (default: 7) |
-| `NSF_DAYS_BACK` | int | NSF SBIR lookback window (default: 180) |
-| `RESULTS_PER_SEARCH` | int | Max results per OpenAlex search term (default: 10) |
+| `NSF_DAYS_BACK` | int | NSF SBIR lookback window (default: 365) |
+| `RESULTS_PER_SEARCH` | int | Max results per OpenAlex search term (default: 20) |
+| `MAX_SCORING_WORKERS` | int | Max concurrent Claude scoring threads (default: 5, safe for Tier 1 50 RPM limit) |
 | `NSF_PROGRAM_NAMES` | list[str] | NSF program filters, currently `SBIR` and `STTR` |
 
 ---
@@ -165,12 +166,12 @@ Found 142 existing records in database — skipping these.
 Fetching papers from OpenAlex...
 Fetching NSF SBIR grants...
 OpenAlex: 28 fetched, 6 new
-Scoring 6 items with Claude (up to 10 concurrent)...
+Scoring 6 items with Claude (up to 5 concurrent)...
 Successfully scored 6 items
 Upserted 6 leads to Supabase
 Scored 6 OpenAlex papers: 2 scored 7+
 NSF SBIR: 11 fetched, 4 new
-Scoring 4 items with Claude (up to 10 concurrent)...
+Scoring 4 items with Claude (up to 5 concurrent)...
 Successfully scored 4 items
 Upserted 4 leads to Supabase
 Scored 4 NSF leads: 1 scored 7+
