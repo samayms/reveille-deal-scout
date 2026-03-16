@@ -47,9 +47,10 @@ SEARCH_TERMS = [
     ["physical economy", "digitization"],
 ]
 
-RESULTS_PER_SEARCH = 10
+RESULTS_PER_SEARCH = 20
+MAX_SCORING_WORKERS = 5  # Tier 1: 50 RPM limit; exponential backoff implemented
 DAYS_BACK = 7
-NSF_DAYS_BACK = 180
+NSF_DAYS_BACK = 365
 OPEN_ALEX_DAYS_BACK = DAYS_BACK
 BIG_QUERY_DAYS_BACK = DAYS_BACK
 SBIR_GOV_DAYS_BACK = 30

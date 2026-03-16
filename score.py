@@ -1,9 +1,12 @@
 import anthropic
 import json
+import time
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from config import ANTHROPIC_API_KEY, OPEN_ALEX_PROMPT, NSF_PROMPT, SBIR_GOV_PROMPT
+from config import ANTHROPIC_API_KEY, OPEN_ALEX_PROMPT, NSF_PROMPT, SBIR_GOV_PROMPT, MAX_SCORING_WORKERS
 
 client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+_claude_semaphore = threading.Semaphore(MAX_SCORING_WORKERS)
 
 def score_item(item):
     source = item.get("source")
@@ -36,11 +39,19 @@ def score_item(item):
             abstract=item.get("abstract", "") or "",
         )
 
-    message = client.messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=300,
-        messages=[{"role": "user", "content": prompt}]
-    )
+    for attempt in range(5):
+        try:
+            with _claude_semaphore:
+                message = client.messages.create(
+                    model="claude-haiku-4-5-20251001",
+                    max_tokens=300,
+                    messages=[{"role": "user", "content": prompt}]
+                )
+            break
+        except anthropic.RateLimitError:
+            if attempt == 4:
+                raise
+            time.sleep(2 ** attempt)
 
     response_text = message.content[0].text
 
@@ -59,7 +70,7 @@ def score_item(item):
     }
 
 
-def score_items(items, max_workers=10):
+def score_items(items, max_workers=MAX_SCORING_WORKERS):
     if not items:
         return []
     print(f"Scoring {len(items)} items with Claude (up to {max_workers} concurrent)...")
