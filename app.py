@@ -1044,7 +1044,15 @@ components.html("""
 # ── Data loading ───────────────────────────────────────────────────────────────
 @st.cache_data(ttl=300, show_spinner="Fetching leads…")
 def load_all():
-    return fetch_leads()
+    try:
+        return fetch_leads()
+    except Exception as e:
+        st.error(
+            f"**Could not connect to database.** "
+            f"Check that `SUPABASE_URL` and `SUPABASE_KEY` are set in Streamlit secrets "
+            f"and that the Supabase project is active.\n\n`{type(e).__name__}`"
+        )
+        return []
 
 
 def section_header(title, sub=""):
